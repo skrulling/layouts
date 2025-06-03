@@ -11,16 +11,22 @@ class LayoutLib {
             onMerge: options.onMerge || null,
             onSelectionChange: options.onSelectionChange || null,
             onSingleSelect: options.onSingleSelect || null,
-            onModeChange: options.onModeChange || null
+            onModeChange: options.onModeChange || null,
+            onRectangleMove: options.onRectangleMove || null
         };
         
         this.cells = [];
         this.mergedAreas = [];
         this.singleSelectedCells = []; // For individual clicked cells
         this.isDragging = false;
+        this.isDraggingRectangle = false;
+        this.draggedRectangle = null;
+        this.isResizing = false;
+        this.resizeData = null;
         this.startCell = null;
         this.currentSelection = null;
         this.selectionOutline = null;
+        this.rectangleDragPreview = null;
         this.editMode = true; // Edit mode is on by default
         
         this.init();
@@ -30,6 +36,7 @@ class LayoutLib {
         this.createGrid();
         this.setupEventListeners();
         this.createSelectionOutline();
+        this.createRectangleDragPreview();
     }
     
     createGrid() {
@@ -67,6 +74,22 @@ class LayoutLib {
         document.body.appendChild(this.selectionOutline);
     }
     
+    createRectangleDragPreview() {
+        this.rectangleDragPreview = document.createElement('div');
+        this.rectangleDragPreview.className = 'rectangle-drag-preview';
+        this.rectangleDragPreview.style.cssText = `
+            position: fixed;
+            border: 3px solid #007bff;
+            background-color: rgba(0, 123, 255, 0.2);
+            border-radius: 8px;
+            z-index: 2000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        `;
+        document.body.appendChild(this.rectangleDragPreview);
+    }
+    
     setupEventListeners() {
         this.container.addEventListener('mousedown', this.handleMouseDown.bind(this));
         document.addEventListener('mousemove', this.handleMouseMove.bind(this));
@@ -78,7 +101,7 @@ class LayoutLib {
     }
     
     handleClick(e) {
-        if (!this.editMode || this.isDragging) return;
+        if (!this.editMode || this.isDragging || this.isDraggingRectangle) return;
         
         if (e.target.classList.contains('grid-cell')) {
             e.stopPropagation();
@@ -116,6 +139,19 @@ class LayoutLib {
     handleMouseDown(e) {
         if (!this.editMode) return;
         
+        // Check if clicking on a merged area overlay
+        if (e.target.classList.contains('merged-area-overlay')) {
+            const rect = e.target.getBoundingClientRect();
+            const resizeHandle = this.getResizeHandle(e, rect);
+            
+            if (resizeHandle) {
+                this.startResize(e, e.target, resizeHandle);
+            } else {
+                this.startRectangleDrag(e);
+            }
+            return;
+        }
+        
         if (e.target.classList.contains('grid-cell')) {
             this.isDragging = true;
             this.startCell = e.target;
@@ -131,7 +167,57 @@ class LayoutLib {
         }
     }
     
+    startRectangleDrag(e) {
+        const overlayElement = e.target;
+        const mergedId = overlayElement.dataset.mergedId;
+        const mergedArea = this.mergedAreas.find(area => area.id === mergedId);
+        
+        if (!mergedArea) return;
+        
+        this.isDraggingRectangle = true;
+        this.draggedRectangle = mergedArea;
+        
+        // Calculate rectangle dimensions
+        const width = mergedArea.endCol - mergedArea.startCol + 1;
+        const height = mergedArea.endRow - mergedArea.startRow + 1;
+        
+        // Store original position
+        this.draggedRectangle.originalStartRow = mergedArea.startRow;
+        this.draggedRectangle.originalStartCol = mergedArea.startCol;
+        this.draggedRectangle.originalEndRow = mergedArea.endRow;
+        this.draggedRectangle.originalEndCol = mergedArea.endCol;
+        this.draggedRectangle.width = width;
+        this.draggedRectangle.height = height;
+        
+        // Hide the original overlay while dragging
+        overlayElement.style.opacity = '0.3';
+        
+        // Clear cells in original position temporarily
+        this.clearRectangleCells(mergedArea);
+        
+        // Update preview
+        this.updateRectangleDragPreview(e);
+        
+        e.preventDefault();
+    }
+    
     handleMouseMove(e) {
+        if (this.isResizing) {
+            this.updateResize(e);
+            return;
+        }
+        
+        if (this.isDraggingRectangle) {
+            this.updateRectangleDragPreview(e);
+            this.updateRectanglePlacementPreview(e);
+            return;
+        }
+        
+        // Check for resize cursor when not dragging
+        if (!this.isDragging && !this.isDraggingRectangle && this.editMode) {
+            this.updateResizeCursor(e);
+        }
+        
         if (!this.isDragging || !this.editMode) return;
         
         const elementUnderMouse = document.elementFromPoint(e.clientX, e.clientY);
@@ -146,7 +232,111 @@ class LayoutLib {
         }
     }
     
+    updateRectangleDragPreview(e) {
+        if (!this.draggedRectangle) return;
+        
+        const cellSize = this.getCellSize();
+        const width = this.draggedRectangle.width * cellSize.width + (this.draggedRectangle.width - 1) * 8; // 8px gap
+        const height = this.draggedRectangle.height * cellSize.height + (this.draggedRectangle.height - 1) * 8;
+        
+        this.rectangleDragPreview.style.left = `${e.clientX - width/2}px`;
+        this.rectangleDragPreview.style.top = `${e.clientY - height/2}px`;
+        this.rectangleDragPreview.style.width = `${width}px`;
+        this.rectangleDragPreview.style.height = `${height}px`;
+        this.rectangleDragPreview.style.opacity = '1';
+    }
+    
+    updateRectanglePlacementPreview(e) {
+        // Clear previous preview
+        this.cells.forEach(cell => {
+            cell.classList.remove('rectangle-drop-preview', 'rectangle-drop-invalid');
+        });
+        
+        const targetCell = document.elementFromPoint(e.clientX, e.clientY);
+        if (!targetCell || !targetCell.classList.contains('grid-cell')) return;
+        
+        const targetRow = parseInt(targetCell.dataset.row);
+        const targetCol = parseInt(targetCell.dataset.col);
+        
+        // Calculate the bounds for the rectangle if placed at this position
+        const endRow = targetRow + this.draggedRectangle.height - 1;
+        const endCol = targetCol + this.draggedRectangle.width - 1;
+        
+        // Check if the rectangle would fit within grid bounds
+        if (endRow >= this.options.rows || endCol >= this.options.cols) {
+            // Show invalid preview
+            this.showInvalidDropPreview(targetRow, targetCol);
+            return;
+        }
+        
+        // Check for collisions with existing rectangles/selections
+        const wouldCollide = this.wouldRectangleCollide(targetRow, targetCol, endRow, endCol);
+        
+        // Show preview
+        for (let row = targetRow; row <= endRow; row++) {
+            for (let col = targetCol; col <= endCol; col++) {
+                const cell = this.getCellAt(row, col);
+                if (cell) {
+                    if (wouldCollide) {
+                        cell.classList.add('rectangle-drop-invalid');
+                    } else {
+                        cell.classList.add('rectangle-drop-preview');
+                    }
+                }
+            }
+        }
+    }
+    
+    showInvalidDropPreview(row, col) {
+        const cell = this.getCellAt(row, col);
+        if (cell) {
+            cell.classList.add('rectangle-drop-invalid');
+        }
+    }
+    
+    wouldRectangleCollide(startRow, startCol, endRow, endCol) {
+        // Check collision with other merged areas (excluding the one being dragged)
+        for (const area of this.mergedAreas) {
+            if (area.id === this.draggedRectangle.id) continue;
+            
+            const overlapsRow = !(endRow < area.startRow || startRow > area.endRow);
+            const overlapsCol = !(endCol < area.startCol || startCol > area.endCol);
+            
+            if (overlapsRow && overlapsCol) {
+                return true;
+            }
+        }
+        
+        // Check collision with single selected cells
+        for (const cellData of this.singleSelectedCells) {
+            if (cellData.row >= startRow && cellData.row <= endRow &&
+                cellData.col >= startCol && cellData.col <= endCol) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    getCellSize() {
+        if (this.cells.length === 0) return { width: 50, height: 50 };
+        
+        const firstCell = this.cells[0];
+        const rect = firstCell.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+    }
+    
     handleMouseUp(e) {
+        if (this.isResizing) {
+            this.finishResize();
+            return;
+        }
+        
+        if (this.isDraggingRectangle) {
+            this.finishRectangleDrag(e);
+            return;
+        }
+        
         if (!this.isDragging) return;
         
         this.isDragging = false;
@@ -156,6 +346,112 @@ class LayoutLib {
         }
         
         this.clearSelection();
+    }
+    
+    finishRectangleDrag(e) {
+        const targetCell = document.elementFromPoint(e.clientX, e.clientY);
+        
+        if (targetCell && targetCell.classList.contains('grid-cell')) {
+            const targetRow = parseInt(targetCell.dataset.row);
+            const targetCol = parseInt(targetCell.dataset.col);
+            const endRow = targetRow + this.draggedRectangle.height - 1;
+            const endCol = targetCol + this.draggedRectangle.width - 1;
+            
+            // Check if drop is valid
+            if (endRow < this.options.rows && endCol < this.options.cols && 
+                !this.wouldRectangleCollide(targetRow, targetCol, endRow, endCol)) {
+                
+                // Update the rectangle position
+                this.draggedRectangle.startRow = targetRow;
+                this.draggedRectangle.startCol = targetCol;
+                this.draggedRectangle.endRow = endRow;
+                this.draggedRectangle.endCol = endCol;
+                
+                // Re-create the overlay at the new position
+                this.updateMergedAreaOverlay(this.draggedRectangle);
+                
+                if (this.options.onRectangleMove) {
+                    this.options.onRectangleMove(this.draggedRectangle);
+                }
+            } else {
+                // Invalid drop - restore original position
+                this.draggedRectangle.startRow = this.draggedRectangle.originalStartRow;
+                this.draggedRectangle.startCol = this.draggedRectangle.originalStartCol;
+                this.draggedRectangle.endRow = this.draggedRectangle.originalEndRow;
+                this.draggedRectangle.endCol = this.draggedRectangle.originalEndCol;
+                
+                // Restore original overlay
+                const overlay = this.container.querySelector(`[data-merged-id="${this.draggedRectangle.id}"]`);
+                if (overlay) {
+                    overlay.style.opacity = '1';
+                }
+                
+                // Restore cells
+                this.restoreRectangleCells(this.draggedRectangle);
+            }
+        } else {
+            // No valid target - restore original position
+            this.draggedRectangle.startRow = this.draggedRectangle.originalStartRow;
+            this.draggedRectangle.startCol = this.draggedRectangle.originalStartCol;
+            this.draggedRectangle.endRow = this.draggedRectangle.originalEndRow;
+            this.draggedRectangle.endCol = this.draggedRectangle.originalEndCol;
+            
+            const overlay = this.container.querySelector(`[data-merged-id="${this.draggedRectangle.id}"]`);
+            if (overlay) {
+                overlay.style.opacity = '1';
+            }
+            
+            this.restoreRectangleCells(this.draggedRectangle);
+        }
+        
+        // Clean up
+        this.cleanupRectangleDrag();
+    }
+    
+    cleanupRectangleDrag() {
+        this.isDraggingRectangle = false;
+        this.draggedRectangle = null;
+        this.rectangleDragPreview.style.opacity = '0';
+        
+        // Clear preview classes
+        this.cells.forEach(cell => {
+            cell.classList.remove('rectangle-drop-preview', 'rectangle-drop-invalid');
+        });
+    }
+    
+    clearRectangleCells(mergedArea) {
+        for (let row = mergedArea.startRow; row <= mergedArea.endRow; row++) {
+            for (let col = mergedArea.startCol; col <= mergedArea.endCol; col++) {
+                const cell = this.getCellAt(row, col);
+                if (cell) {
+                    cell.style.opacity = '1';
+                    cell.classList.remove('merged');
+                }
+            }
+        }
+    }
+    
+    restoreRectangleCells(mergedArea) {
+        for (let row = mergedArea.startRow; row <= mergedArea.endRow; row++) {
+            for (let col = mergedArea.startCol; col <= mergedArea.endCol; col++) {
+                const cell = this.getCellAt(row, col);
+                if (cell) {
+                    cell.style.opacity = '0';
+                    cell.classList.add('merged');
+                }
+            }
+        }
+    }
+    
+    updateMergedAreaOverlay(mergedArea) {
+        // Remove old overlay
+        const oldOverlay = this.container.querySelector(`[data-merged-id="${mergedArea.id}"]`);
+        if (oldOverlay) {
+            oldOverlay.remove();
+        }
+        
+        // Create new overlay at new position
+        this.createMergedAreaOverlay(mergedArea);
     }
     
     updateSelection() {
@@ -372,8 +668,34 @@ class LayoutLib {
             font-weight: bold;
             color: #27ae60;
             z-index: 5;
-            pointer-events: none;
+            cursor: ${this.editMode ? 'grab' : 'default'};
+            transition: all 0.3s ease;
         `;
+        
+        // Add hover effect for draggable overlays
+        if (this.editMode) {
+            overlay.addEventListener('mouseenter', () => {
+                if (!this.isDraggingRectangle) {
+                    overlay.style.transform = 'scale(1.02)';
+                    overlay.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+                }
+            });
+            
+            overlay.addEventListener('mouseleave', () => {
+                if (!this.isDraggingRectangle) {
+                    overlay.style.transform = 'scale(1)';
+                    overlay.style.boxShadow = 'none';
+                }
+            });
+            
+            overlay.addEventListener('mousedown', () => {
+                overlay.style.cursor = 'grabbing';
+            });
+            
+            overlay.addEventListener('mouseup', () => {
+                overlay.style.cursor = 'grab';
+            });
+        }
         
         this.container.appendChild(overlay);
     }
@@ -448,9 +770,11 @@ class LayoutLib {
             if (this.editMode) {
                 overlay.classList.remove('view-mode');
                 overlay.textContent = '+';
+                overlay.style.cursor = 'grab';
             } else {
                 overlay.classList.add('view-mode');
                 overlay.textContent = '';
+                overlay.style.cursor = 'default';
             }
         });
         
@@ -504,19 +828,255 @@ class LayoutLib {
         this.mergedAreas = [];
         this.singleSelectedCells = [];
         this.cells.forEach(cell => {
-            cell.classList.remove('merged', 'selecting', 'preview', 'merging', 'single-selected');
+            cell.classList.remove('merged', 'selecting', 'preview', 'merging', 'single-selected', 'rectangle-drop-preview', 'rectangle-drop-invalid', 'resize-preview', 'resize-invalid');
             cell.style.opacity = '1';
         });
         
         // Remove all overlay elements
         const overlays = this.container.querySelectorAll('.merged-area-overlay');
         overlays.forEach(overlay => overlay.remove());
+        
+        // Reset cursor
+        document.body.style.cursor = '';
     }
     
     destroy() {
         if (this.selectionOutline && this.selectionOutline.parentElement) {
             this.selectionOutline.parentElement.removeChild(this.selectionOutline);
         }
+        if (this.rectangleDragPreview && this.rectangleDragPreview.parentElement) {
+            this.rectangleDragPreview.parentElement.removeChild(this.rectangleDragPreview);
+        }
         this.container.innerHTML = '';
+    }
+    
+    updateResizeCursor(e) {
+        const element = document.elementFromPoint(e.clientX, e.clientY);
+        if (!element || !element.classList.contains('merged-area-overlay')) {
+            document.body.style.cursor = '';
+            return;
+        }
+        
+        const rect = element.getBoundingClientRect();
+        const resizeHandle = this.getResizeHandle(e, rect);
+        
+        if (resizeHandle) {
+            document.body.style.cursor = this.getResizeCursor(resizeHandle);
+        } else {
+            document.body.style.cursor = 'grab';
+        }
+    }
+    
+    getResizeHandle(e, rect) {
+        const margin = 8; // Resize handle margin in pixels
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        const nearLeft = x <= margin;
+        const nearRight = x >= rect.width - margin;
+        const nearTop = y <= margin;
+        const nearBottom = y >= rect.height - margin;
+        
+        if (nearTop && nearLeft) return 'nw';
+        if (nearTop && nearRight) return 'ne';
+        if (nearBottom && nearLeft) return 'sw';
+        if (nearBottom && nearRight) return 'se';
+        if (nearTop) return 'n';
+        if (nearBottom) return 's';
+        if (nearLeft) return 'w';
+        if (nearRight) return 'e';
+        
+        return null;
+    }
+    
+    getResizeCursor(handle) {
+        switch (handle) {
+            case 'n':
+            case 's':
+                return 'ns-resize';
+            case 'e':
+            case 'w':
+                return 'ew-resize';
+            case 'nw':
+            case 'se':
+                return 'nwse-resize';
+            case 'ne':
+            case 'sw':
+                return 'nesw-resize';
+            default:
+                return 'grab';
+        }
+    }
+    
+    startResize(e, overlayElement, resizeHandle) {
+        const mergedId = overlayElement.dataset.mergedId;
+        const mergedArea = this.mergedAreas.find(area => area.id === mergedId);
+        
+        if (!mergedArea) return;
+        
+        this.isResizing = true;
+        this.resizeData = {
+            mergedArea: mergedArea,
+            handle: resizeHandle,
+            originalStartRow: mergedArea.startRow,
+            originalEndRow: mergedArea.endRow,
+            originalStartCol: mergedArea.startCol,
+            originalEndCol: mergedArea.endCol,
+            startX: e.clientX,
+            startY: e.clientY,
+            overlay: overlayElement
+        };
+        
+        // Store cell size for calculations
+        this.resizeData.cellSize = this.getCellSize();
+        this.resizeData.containerRect = this.container.getBoundingClientRect();
+        
+        e.preventDefault();
+    }
+    
+    updateResize(e) {
+        if (!this.resizeData) return;
+        
+        const deltaX = e.clientX - this.resizeData.startX;
+        const deltaY = e.clientY - this.resizeData.startY;
+        
+        // Convert pixel delta to grid delta
+        const cellWidth = this.resizeData.cellSize.width + 8; // Include gap
+        const cellHeight = this.resizeData.cellSize.height + 8;
+        
+        const deltaCol = Math.round(deltaX / cellWidth);
+        const deltaRow = Math.round(deltaY / cellHeight);
+        
+        // Calculate new bounds based on handle
+        let newStartRow = this.resizeData.originalStartRow;
+        let newEndRow = this.resizeData.originalEndRow;
+        let newStartCol = this.resizeData.originalStartCol;
+        let newEndCol = this.resizeData.originalEndCol;
+        
+        const handle = this.resizeData.handle;
+        
+        // Apply deltas based on resize handle
+        if (handle.includes('n')) newStartRow += deltaRow;
+        if (handle.includes('s')) newEndRow += deltaRow;
+        if (handle.includes('w')) newStartCol += deltaCol;
+        if (handle.includes('e')) newEndCol += deltaCol;
+        
+        // Validate bounds
+        if (newStartRow < 0) newStartRow = 0;
+        if (newStartCol < 0) newStartCol = 0;
+        if (newEndRow >= this.options.rows) newEndRow = this.options.rows - 1;
+        if (newEndCol >= this.options.cols) newEndCol = this.options.cols - 1;
+        
+        // Ensure minimum size (1x1)
+        if (newEndRow < newStartRow) {
+            if (handle.includes('n')) newStartRow = newEndRow;
+            else newEndRow = newStartRow;
+        }
+        if (newEndCol < newStartCol) {
+            if (handle.includes('w')) newStartCol = newEndCol;
+            else newEndCol = newStartCol;
+        }
+        
+        // Check for collisions (excluding current rectangle)
+        const wouldCollide = this.wouldResizeCollide(newStartRow, newStartCol, newEndRow, newEndCol);
+        
+        // Show preview
+        this.showResizePreview(newStartRow, newStartCol, newEndRow, newEndCol, wouldCollide);
+        
+        // Store proposed dimensions
+        this.resizeData.newStartRow = newStartRow;
+        this.resizeData.newEndRow = newEndRow;
+        this.resizeData.newStartCol = newStartCol;
+        this.resizeData.newEndCol = newEndCol;
+        this.resizeData.wouldCollide = wouldCollide;
+    }
+    
+    wouldResizeCollide(startRow, startCol, endRow, endCol) {
+        // Check collision with other merged areas (excluding the one being resized)
+        for (const area of this.mergedAreas) {
+            if (area.id === this.resizeData.mergedArea.id) continue;
+            
+            const overlapsRow = !(endRow < area.startRow || startRow > area.endRow);
+            const overlapsCol = !(endCol < area.startCol || startCol > area.endCol);
+            
+            if (overlapsRow && overlapsCol) {
+                return true;
+            }
+        }
+        
+        // Check collision with single selected cells
+        for (const cellData of this.singleSelectedCells) {
+            if (cellData.row >= startRow && cellData.row <= endRow &&
+                cellData.col >= startCol && cellData.col <= endCol) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    showResizePreview(startRow, startCol, endRow, endCol, wouldCollide) {
+        // Clear previous preview
+        this.cells.forEach(cell => {
+            cell.classList.remove('resize-preview', 'resize-invalid');
+        });
+        
+        // Show new preview
+        for (let row = startRow; row <= endRow; row++) {
+            for (let col = startCol; col <= endCol; col++) {
+                const cell = this.getCellAt(row, col);
+                if (cell) {
+                    if (wouldCollide) {
+                        cell.classList.add('resize-invalid');
+                    } else {
+                        cell.classList.add('resize-preview');
+                    }
+                }
+            }
+        }
+    }
+    
+    finishResize() {
+        if (!this.resizeData || this.resizeData.wouldCollide) {
+            // Invalid resize - cancel
+            this.cancelResize();
+            return;
+        }
+        
+        const { mergedArea, newStartRow, newEndRow, newStartCol, newEndCol } = this.resizeData;
+        
+        // Clear old cells
+        this.clearRectangleCells(mergedArea);
+        
+        // Update rectangle bounds
+        mergedArea.startRow = newStartRow;
+        mergedArea.endRow = newEndRow;
+        mergedArea.startCol = newStartCol;
+        mergedArea.endCol = newEndCol;
+        
+        // Update overlay
+        this.updateMergedAreaOverlay(mergedArea);
+        
+        // Clean up
+        this.cleanupResize();
+        
+        if (this.options.onRectangleMove) {
+            this.options.onRectangleMove(mergedArea);
+        }
+    }
+    
+    cancelResize() {
+        this.cleanupResize();
+    }
+    
+    cleanupResize() {
+        this.isResizing = false;
+        this.resizeData = null;
+        document.body.style.cursor = '';
+        
+        // Clear preview classes
+        this.cells.forEach(cell => {
+            cell.classList.remove('resize-preview', 'resize-invalid');
+        });
     }
 }

@@ -146,8 +146,8 @@ button.active:hover {
     font-weight: bold;
     color: #27ae60;
     z-index: 5;
-    pointer-events: none;
     transition: all 0.3s ease;
+    user-select: none;
 }
 
 .merged-area-overlay:hover {
@@ -236,4 +236,46 @@ button.active:hover {
 
 .merged-area-overlay.view-mode::after {
     content: '';
+}
+
+/* Rectangle drag and drop styles */
+.rectangle-drag-preview {
+    position: fixed;
+    border: 3px solid #007bff;
+    background-color: rgba(0, 123, 255, 0.2);
+    border-radius: 8px;
+    z-index: 2000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.grid-cell.rectangle-drop-preview {
+    background-color: #d4edda;
+    border-color: #28a745;
+    color: #155724;
+    transform: scale(0.95);
+}
+
+.grid-cell.rectangle-drop-invalid {
+    background-color: #f8d7da;
+    border-color: #dc3545;
+    color: #721c24;
+    transform: scale(0.95);
+}
+
+/* Resize preview styles */
+.grid-cell.resize-preview {
+    background-color: #cce5ff;
+    border-color: #007bff;
+    color: #0056b3;
+    transform: scale(0.98);
+}
+
+.grid-cell.resize-invalid {
+    background-color: #f8d7da;
+    border-color: #dc3545;
+    color: #721c24;
+    transform: scale(0.95);
+    opacity: 0.7;
 } 

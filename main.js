@@ -22,6 +22,13 @@ document.addEventListener('DOMContentLoaded', function() {
             
             showNotification(`Single cell selected: ${cellId}`);
         },
+        onRectangleMove: function(movedRectangle) {
+            console.log('Rectangle moved/resized:', movedRectangle);
+            
+            const width = movedRectangle.endCol - movedRectangle.startCol + 1;
+            const height = movedRectangle.endRow - movedRectangle.startRow + 1;
+            showNotification(`Rectangle updated: ${height}x${width} at (${movedRectangle.startRow}, ${movedRectangle.startCol})`);
+        },
         onModeChange: function(editMode) {
             console.log('Edit mode changed:', editMode);
             updateEditModeButton(editMode);
