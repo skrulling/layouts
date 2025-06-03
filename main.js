@@ -1,5 +1,12 @@
 // Main application logic for the Layout Library POC
 document.addEventListener('DOMContentLoaded', function() {
+    // Check if Highcharts is loaded
+    if (typeof Highcharts === 'undefined') {
+        console.error('Highcharts library not loaded!');
+        showNotification('Error: Highcharts library not loaded!', 5000);
+        return;
+    }
+    
     const gridContainer = document.getElementById('layoutGrid');
     const editModeBtn = document.getElementById('editModeBtn');
     const exportBtn = document.getElementById('exportBtn');
@@ -36,6 +43,27 @@ document.addEventListener('DOMContentLoaded', function() {
         onSelectionChange: function(selection, canMerge) {
             // Optional: could show selection info in UI
             // console.log('Selection:', selection, 'Can merge:', canMerge);
+        },
+        onContentClick: function(mergedArea, overlayElement) {
+            console.log('Content clicked:', mergedArea);
+            console.log('Overlay element:', overlayElement);
+            console.log('Edit mode:', layoutLib.editMode);
+            
+            // Generate and add random content (or replace existing)
+            try {
+                const contentElement = createRandomChart(mergedArea);
+                const success = layoutLib.addContentToArea(mergedArea.id, contentElement);
+                console.log('Chart added successfully:', success);
+                
+                if (success) {
+                    showNotification('Random Highcharts graph added to area!');
+                } else {
+                    showNotification('Failed to add chart');
+                }
+            } catch (error) {
+                console.error('Error creating chart:', error);
+                showNotification('Error creating chart: ' + error.message);
+            }
         }
     });
     
@@ -255,6 +283,166 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    // Function to create random chart content
+    function createRandomChart(mergedArea) {
+        console.log('Creating chart for area:', mergedArea);
+        
+        const chartContainer = document.createElement('div');
+        chartContainer.style.cssText = `
+            width: 100%;
+            height: 100%;
+            min-height: 200px;
+            min-width: 200px;
+            padding: 4px;
+            box-sizing: border-box;
+            background: white;
+            border-radius: 6px;
+        `;
+        
+        // Assign a unique ID for Highcharts
+        const chartId = `chart-${mergedArea.id}-${Date.now()}`;
+        chartContainer.id = chartId;
+        
+        // Generate random data
+        const categories = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+        const data = categories.map(() => Math.floor(Math.random() * 100) + 10);
+        
+        // Randomly choose between line and column chart
+        const chartTypes = ['line', 'column'];
+        const randomType = chartTypes[Math.floor(Math.random() * chartTypes.length)];
+        
+        console.log('Chart type:', randomType, 'Data:', data);
+        
+        // Create Highcharts configuration
+        const chartConfig = {
+            chart: {
+                type: randomType,
+                backgroundColor: 'white',
+                borderRadius: 6,
+                height: '100%',
+                animation: {
+                    duration: 500
+                }
+            },
+            title: {
+                text: `${randomType === 'line' ? 'Line' : 'Bar'} Chart`,
+                style: {
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    color: '#333'
+                }
+            },
+            credits: {
+                enabled: false
+            },
+            legend: {
+                enabled: false
+            },
+            xAxis: {
+                categories: categories,
+                labels: {
+                    style: {
+                        fontSize: '11px'
+                    }
+                },
+                title: {
+                    text: null
+                }
+            },
+            yAxis: {
+                title: {
+                    text: 'Value',
+                    style: {
+                        fontSize: '11px'
+                    }
+                },
+                labels: {
+                    style: {
+                        fontSize: '11px'
+                    }
+                },
+                gridLineWidth: 1
+            },
+            plotOptions: {
+                series: {
+                    animation: {
+                        duration: 500
+                    },
+                    dataLabels: {
+                        enabled: false
+                    }
+                },
+                line: {
+                    marker: {
+                        radius: 4,
+                        symbol: 'circle'
+                    },
+                    lineWidth: 3
+                },
+                column: {
+                    borderRadius: 3,
+                    borderWidth: 0,
+                    pointPadding: 0.1
+                }
+            },
+            series: [{
+                name: 'Value',
+                data: data,
+                color: randomType === 'line' ? '#007bff' : '#28a745'
+            }],
+            tooltip: {
+                formatter: function() {
+                    return `<b>${this.x}</b><br/>${this.series.name}: ${this.y}`;
+                }
+            },
+            responsive: {
+                rules: [{
+                    condition: {
+                        maxWidth: 500
+                    },
+                    chartOptions: {
+                        title: {
+                            style: {
+                                fontSize: '12px'
+                            }
+                        },
+                        xAxis: {
+                            labels: {
+                                style: {
+                                    fontSize: '10px'
+                                }
+                            }
+                        },
+                        yAxis: {
+                            labels: {
+                                style: {
+                                    fontSize: '10px'
+                                }
+                            }
+                        }
+                    }
+                }]
+            }
+        };
+        
+        // Create the chart immediately and handle errors
+        try {
+            console.log('Creating Highcharts chart...');
+            const chart = Highcharts.chart(chartContainer, chartConfig);
+            console.log('Chart created successfully:', chart);
+        } catch (error) {
+            console.error('Error creating Highcharts chart:', error);
+            // Fallback: show simple text
+            chartContainer.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: center; height: 100%; font-size: 14px; color: #666;">
+                    Chart Error: ${error.message}
+                </div>
+            `;
+        }
+        
+        return chartContainer;
+    }
     
     // Add some helpful keyboard shortcuts
     document.addEventListener('keydown', function(e) {
@@ -308,5 +496,22 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     console.log('Layout Library POC initialized successfully!');
-    showNotification('Layout Library loaded! Click cells or drag to merge. Use "Edit Mode" to toggle.', 5000);
-}); 
+    showNotification('Layout Library loaded! Create boxes by dragging, then click their centers for Highcharts!', 5000);
+    
+    // Debug function to check overlays
+    window.debugOverlays = function() {
+        const overlays = document.querySelectorAll('.merged-area-overlay');
+        console.log('Found overlays:', overlays.length);
+        overlays.forEach((overlay, index) => {
+            console.log(`Overlay ${index}:`, {
+                id: overlay.dataset.mergedId,
+                classes: overlay.className,
+                style: overlay.style.cssText,
+                position: overlay.getBoundingClientRect()
+            });
+        });
+        return overlays;
+    };
+    
+    console.log('Debug function available: window.debugOverlays()');
+});

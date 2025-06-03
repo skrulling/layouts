@@ -12,7 +12,8 @@ class LayoutLib {
             onSelectionChange: options.onSelectionChange || null,
             onSingleSelect: options.onSingleSelect || null,
             onModeChange: options.onModeChange || null,
-            onRectangleMove: options.onRectangleMove || null
+            onRectangleMove: options.onRectangleMove || null,
+            onContentClick: options.onContentClick || null
         };
         
         this.cells = [];
@@ -101,6 +102,37 @@ class LayoutLib {
     }
     
     handleClick(e) {
+        console.log('Click event triggered:', e.target.className, 'Edit mode:', this.editMode);
+        
+        // Handle content clicking on merged area overlays or their children
+        let targetOverlay = null;
+        
+        if (e.target.classList.contains('merged-area-overlay')) {
+            targetOverlay = e.target;
+        } else {
+            // Check if clicked element is inside an overlay
+            targetOverlay = e.target.closest('.merged-area-overlay');
+        }
+        
+        if (targetOverlay) {
+            console.log('Clicked on merged area overlay or child!', targetOverlay);
+            
+            if (this.editMode && this.options.onContentClick) {
+                // Only trigger content click if not dragging/resizing
+                if (!this.isDragging && !this.isDraggingRectangle && !this.isResizing) {
+                    const mergedId = targetOverlay.dataset.mergedId;
+                    const mergedArea = this.mergedAreas.find(area => area.id === mergedId);
+                    if (mergedArea) {
+                        console.log('Triggering content click for area:', mergedId);
+                        e.stopPropagation();
+                        this.options.onContentClick(mergedArea, targetOverlay);
+                        return;
+                    }
+                }
+            }
+        }
+        
+        // Original cell clicking logic
         if (!this.editMode || this.isDragging || this.isDraggingRectangle) return;
         
         if (e.target.classList.contains('grid-cell')) {
@@ -137,20 +169,28 @@ class LayoutLib {
     }
     
     handleMouseDown(e) {
-        if (!this.editMode) return;
+        console.log('Mouse down event:', e.target.className, 'Edit mode:', this.editMode);
         
         // Check if clicking on a merged area overlay
         if (e.target.classList.contains('merged-area-overlay')) {
             const rect = e.target.getBoundingClientRect();
             const resizeHandle = this.getResizeHandle(e, rect);
             
-            if (resizeHandle) {
-                this.startResize(e, e.target, resizeHandle);
-            } else {
-                this.startRectangleDrag(e);
+            console.log('Clicked on overlay, resize handle:', resizeHandle);
+            
+            if (this.editMode) {
+                if (resizeHandle) {
+                    // Near edges: start resize
+                    this.startResize(e, e.target, resizeHandle);
+                } else {
+                    // Center area: start rectangle drag
+                    this.startRectangleDrag(e);
+                }
             }
             return;
         }
+
+        if (!this.editMode) return;
         
         if (e.target.classList.contains('grid-cell')) {
             this.isDragging = true;
@@ -454,173 +494,6 @@ class LayoutLib {
         this.createMergedAreaOverlay(mergedArea);
     }
     
-    updateSelection() {
-        // Clear previous selection styling
-        this.cells.forEach(cell => {
-            cell.classList.remove('selecting', 'preview');
-        });
-        
-        if (!this.currentSelection) return;
-        
-        const selection = this.getNormalizedSelection();
-        const selectedCells = this.getCellsInSelection(selection);
-        
-        // Check if all cells in selection are available for merging
-        const canMerge = this.canMergeSelection(selectedCells);
-        
-        selectedCells.forEach(cell => {
-            if (canMerge) {
-                cell.classList.add('preview');
-            } else {
-                cell.classList.add('selecting');
-            }
-        });
-        
-        // Update selection outline
-        this.updateSelectionOutline(selection, canMerge);
-        
-        if (this.options.onSelectionChange) {
-            this.options.onSelectionChange(selection, canMerge);
-        }
-    }
-    
-    updateSelectionOutline(selection, canMerge) {
-        const firstCell = this.getCellAt(selection.startRow, selection.startCol);
-        const lastCell = this.getCellAt(selection.endRow, selection.endCol);
-        
-        if (!firstCell || !lastCell) return;
-        
-        const firstRect = firstCell.getBoundingClientRect();
-        const lastRect = lastCell.getBoundingClientRect();
-        
-        const outline = this.selectionOutline;
-        outline.style.left = `${firstRect.left}px`;
-        outline.style.top = `${firstRect.top}px`;
-        outline.style.width = `${lastRect.right - firstRect.left}px`;
-        outline.style.height = `${lastRect.bottom - firstRect.top}px`;
-        outline.style.borderColor = canMerge ? '#28a745' : '#ffc107';
-        outline.classList.add('active');
-    }
-    
-    getNormalizedSelection() {
-        const startRow = Math.min(this.currentSelection.startRow, this.currentSelection.endRow);
-        const endRow = Math.max(this.currentSelection.startRow, this.currentSelection.endRow);
-        const startCol = Math.min(this.currentSelection.startCol, this.currentSelection.endCol);
-        const endCol = Math.max(this.currentSelection.startCol, this.currentSelection.endCol);
-        
-        return { startRow, endRow, startCol, endCol };
-    }
-    
-    getCellsInSelection(selection) {
-        const cells = [];
-        for (let row = selection.startRow; row <= selection.endRow; row++) {
-            for (let col = selection.startCol; col <= selection.endCol; col++) {
-                const cell = this.getCellAt(row, col);
-                if (cell) cells.push(cell);
-            }
-        }
-        return cells;
-    }
-    
-    getCellAt(row, col) {
-        return this.cells.find(cell => 
-            parseInt(cell.dataset.row) === row && parseInt(cell.dataset.col) === col
-        );
-    }
-    
-    canMergeSelection(selectedCells) {
-        // Check if any of the selected cells are already part of a larger merged area
-        return selectedCells.every(cell => {
-            // A cell can be merged if it's not already part of a merged area,
-            // or if all cells in the selection belong to the same merged area
-            return !this.isCellInMergedArea(cell) || this.areAllCellsInSameMergedArea(selectedCells);
-        });
-    }
-    
-    isCellInMergedArea(cell) {
-        const row = parseInt(cell.dataset.row);
-        const col = parseInt(cell.dataset.col);
-        
-        return this.mergedAreas.some(area => 
-            row >= area.startRow && row <= area.endRow &&
-            col >= area.startCol && col <= area.endCol
-        );
-    }
-    
-    areAllCellsInSameMergedArea(cells) {
-        if (cells.length === 0) return false;
-        
-        const firstCellArea = this.getMergedAreaForCell(cells[0]);
-        if (!firstCellArea) return false;
-        
-        return cells.every(cell => {
-            const cellArea = this.getMergedAreaForCell(cell);
-            return cellArea === firstCellArea;
-        });
-    }
-    
-    getMergedAreaForCell(cell) {
-        const row = parseInt(cell.dataset.row);
-        const col = parseInt(cell.dataset.col);
-        
-        return this.mergedAreas.find(area => 
-            row >= area.startRow && row <= area.endRow &&
-            col >= area.startCol && col <= area.endCol
-        );
-    }
-    
-    isValidSelection() {
-        const selection = this.getNormalizedSelection();
-        return selection.startRow !== selection.endRow || selection.startCol !== selection.endCol;
-    }
-    
-    mergeSelection() {
-        const selection = this.getNormalizedSelection();
-        const selectedCells = this.getCellsInSelection(selection);
-        
-        if (!this.canMergeSelection(selectedCells)) return;
-        
-        // Remove any existing merged areas that overlap with this selection
-        this.removeMergedAreasInSelection(selection);
-        
-        // Remove any single selections in the merged area
-        selectedCells.forEach(cell => {
-            cell.classList.remove('single-selected');
-            const cellId = cell.dataset.id;
-            this.singleSelectedCells = this.singleSelectedCells.filter(c => c.id !== cellId);
-        });
-        
-        // Add new merged area
-        const mergedArea = {
-            startRow: selection.startRow,
-            endRow: selection.endRow,
-            startCol: selection.startCol,
-            endCol: selection.endCol,
-            id: `merged-${Date.now()}`
-        };
-        this.mergedAreas.push(mergedArea);
-        
-        // Apply merge styling with animation
-        selectedCells.forEach((cell, index) => {
-            setTimeout(() => {
-                cell.classList.add('merging');
-                setTimeout(() => {
-                    cell.classList.remove('merging');
-                    cell.classList.add('merged');
-                }, 600);
-            }, index * 50);
-        });
-        
-        // Create merged area overlay
-        setTimeout(() => {
-            this.createMergedAreaOverlay(mergedArea);
-        }, 600);
-        
-        if (this.options.onMerge) {
-            this.options.onMerge(selection, this.mergedAreas);
-        }
-    }
-    
     createMergedAreaOverlay(mergedArea) {
         const firstCell = this.getCellAt(mergedArea.startRow, mergedArea.startCol);
         const lastCell = this.getCellAt(mergedArea.endRow, mergedArea.endCol);
@@ -640,8 +513,43 @@ class LayoutLib {
         // Create overlay element
         const overlay = document.createElement('div');
         overlay.className = 'merged-area-overlay';
-        overlay.textContent = this.editMode ? '+' : '';
         overlay.dataset.mergedId = mergedArea.id;
+        
+        // Create content container
+        const contentContainer = document.createElement('div');
+        contentContainer.className = 'merged-area-content';
+        contentContainer.style.cssText = `
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        `;
+        
+        console.log('Content container created with dimensions');
+        
+        // Create placeholder text element
+        const placeholder = document.createElement('div');
+        placeholder.className = 'merged-area-placeholder';
+        placeholder.textContent = this.editMode ? '+' : '';
+        placeholder.style.cssText = `
+            font-size: 24px;
+            font-weight: bold;
+            color: #27ae60;
+            display: ${(this.editMode && !mergedArea.hasContent) ? 'block' : 'none'};
+            position: absolute;
+            z-index: 1;
+            pointer-events: none;
+        `;
+        
+        contentContainer.appendChild(placeholder);
+        overlay.appendChild(contentContainer);
+        
+        // Store reference to content container in merged area
+        mergedArea.contentContainer = contentContainer;
+        mergedArea.placeholder = placeholder;
         
         if (!this.editMode) {
             overlay.classList.add('view-mode');
@@ -661,14 +569,8 @@ class LayoutLib {
             background-color: #e8f5e8;
             border: 2px solid #27ae60;
             border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            font-weight: bold;
-            color: #27ae60;
             z-index: 5;
-            cursor: ${this.editMode ? 'grab' : 'default'};
+            cursor: ${this.editMode ? 'pointer' : 'default'};
             transition: all 0.3s ease;
         `;
         
@@ -695,9 +597,26 @@ class LayoutLib {
             overlay.addEventListener('mouseup', () => {
                 overlay.style.cursor = 'grab';
             });
+            
+            // Test direct click listener
+            overlay.addEventListener('click', (e) => {
+                console.log('Direct overlay click detected!', e);
+            });
+        } else if (mergedArea.hasContent) {
+            // Add hover effect for content areas in view mode
+            overlay.addEventListener('mouseenter', () => {
+                overlay.style.transform = 'scale(1.01)';
+                overlay.style.boxShadow = '0 2px 6px rgba(0,0,0,0.15)';
+            });
+            
+            overlay.addEventListener('mouseleave', () => {
+                overlay.style.transform = 'scale(1)';
+                overlay.style.boxShadow = 'none';
+            });
         }
         
         this.container.appendChild(overlay);
+        console.log('Created merged area overlay with ID:', mergedArea.id, 'classes:', overlay.className);
     }
     
     removeMergedAreasInSelection(selection) {
@@ -765,16 +684,25 @@ class LayoutLib {
         }
         
         // Update merged area overlays
-        const overlays = this.container.querySelectorAll('.merged-area-overlay');
-        overlays.forEach(overlay => {
-            if (this.editMode) {
-                overlay.classList.remove('view-mode');
-                overlay.textContent = '+';
-                overlay.style.cursor = 'grab';
-            } else {
-                overlay.classList.add('view-mode');
-                overlay.textContent = '';
-                overlay.style.cursor = 'default';
+        this.mergedAreas.forEach(mergedArea => {
+            const overlay = this.container.querySelector(`[data-merged-id="${mergedArea.id}"]`);
+            if (overlay) {
+                if (this.editMode) {
+                    overlay.classList.remove('view-mode');
+                    overlay.style.cursor = 'pointer'; // Clickable for content in edit mode
+                    // Show placeholder if no content
+                    if (mergedArea.placeholder && !mergedArea.hasContent) {
+                        mergedArea.placeholder.style.display = 'block';
+                        mergedArea.placeholder.textContent = '+';
+                    }
+                } else {
+                    overlay.classList.add('view-mode');
+                    overlay.style.cursor = 'default'; // No interactions in view mode
+                    // Hide placeholder in view mode
+                    if (mergedArea.placeholder) {
+                        mergedArea.placeholder.style.display = 'none';
+                    }
+                }
             }
         });
         
@@ -1078,5 +1006,234 @@ class LayoutLib {
         this.cells.forEach(cell => {
             cell.classList.remove('resize-preview', 'resize-invalid');
         });
+    }
+    
+    // Public API methods for content management
+    addContentToArea(areaId, contentElement) {
+        console.log('Adding content to area:', areaId, contentElement);
+        
+        const mergedArea = this.mergedAreas.find(area => area.id === areaId);
+        if (!mergedArea || !mergedArea.contentContainer) {
+            console.error('Merged area or content container not found:', areaId);
+            return false;
+        }
+        
+        console.log('Found merged area and container:', mergedArea.contentContainer);
+        
+        // Clear existing content (except placeholder)
+        const placeholder = mergedArea.placeholder;
+        mergedArea.contentContainer.innerHTML = '';
+        mergedArea.contentContainer.appendChild(placeholder);
+        
+        // Add new content
+        mergedArea.contentContainer.appendChild(contentElement);
+        mergedArea.hasContent = true;
+        
+        console.log('Content added, container children:', mergedArea.contentContainer.children.length);
+        
+        // Hide placeholder and update cursor
+        placeholder.style.display = 'none';
+        const overlay = this.container.querySelector(`[data-merged-id="${areaId}"]`);
+        if (overlay) {
+            overlay.style.cursor = this.editMode ? 'pointer' : 'pointer';
+            console.log('Updated overlay cursor');
+        }
+        
+        return true;
+    }
+    
+    removeContentFromArea(areaId) {
+        const mergedArea = this.mergedAreas.find(area => area.id === areaId);
+        if (!mergedArea || !mergedArea.contentContainer) return false;
+        
+        // Clear content but keep placeholder
+        const placeholder = mergedArea.placeholder;
+        mergedArea.contentContainer.innerHTML = '';
+        mergedArea.contentContainer.appendChild(placeholder);
+        mergedArea.hasContent = false;
+        
+        // Show placeholder if in edit mode and update cursor
+        if (this.editMode) {
+            placeholder.style.display = 'block';
+        }
+        const overlay = this.container.querySelector(`[data-merged-id="${areaId}"]`);
+        if (overlay) {
+            overlay.style.cursor = this.editMode ? 'grab' : 'default';
+        }
+        
+        return true;
+    }
+    
+    getContentContainer(areaId) {
+        const mergedArea = this.mergedAreas.find(area => area.id === areaId);
+        return mergedArea ? mergedArea.contentContainer : null;
+    }
+    
+    updateSelection() {
+        // Clear previous selection styling
+        this.cells.forEach(cell => {
+            cell.classList.remove('selecting', 'preview');
+        });
+        
+        if (!this.currentSelection) return;
+        
+        const selection = this.getNormalizedSelection();
+        const selectedCells = this.getCellsInSelection(selection);
+        
+        // Check if all cells in selection are available for merging
+        const canMerge = this.canMergeSelection(selectedCells);
+        
+        selectedCells.forEach(cell => {
+            if (canMerge) {
+                cell.classList.add('preview');
+            } else {
+                cell.classList.add('selecting');
+            }
+        });
+        
+        // Update selection outline
+        this.updateSelectionOutline(selection, canMerge);
+        
+        if (this.options.onSelectionChange) {
+            this.options.onSelectionChange(selection, canMerge);
+        }
+    }
+    
+    updateSelectionOutline(selection, canMerge) {
+        const firstCell = this.getCellAt(selection.startRow, selection.startCol);
+        const lastCell = this.getCellAt(selection.endRow, selection.endCol);
+        
+        if (!firstCell || !lastCell) return;
+        
+        const firstRect = firstCell.getBoundingClientRect();
+        const lastRect = lastCell.getBoundingClientRect();
+        
+        const outline = this.selectionOutline;
+        outline.style.left = `${firstRect.left}px`;
+        outline.style.top = `${firstRect.top}px`;
+        outline.style.width = `${lastRect.right - firstRect.left}px`;
+        outline.style.height = `${lastRect.bottom - firstRect.top}px`;
+        outline.style.borderColor = canMerge ? '#28a745' : '#ffc107';
+        outline.classList.add('active');
+    }
+    
+    getNormalizedSelection() {
+        const startRow = Math.min(this.currentSelection.startRow, this.currentSelection.endRow);
+        const endRow = Math.max(this.currentSelection.startRow, this.currentSelection.endRow);
+        const startCol = Math.min(this.currentSelection.startCol, this.currentSelection.endCol);
+        const endCol = Math.max(this.currentSelection.startCol, this.currentSelection.endCol);
+        
+        return { startRow, endRow, startCol, endCol };
+    }
+    
+    getCellsInSelection(selection) {
+        const cells = [];
+        for (let row = selection.startRow; row <= selection.endRow; row++) {
+            for (let col = selection.startCol; col <= selection.endCol; col++) {
+                const cell = this.getCellAt(row, col);
+                if (cell) cells.push(cell);
+            }
+        }
+        return cells;
+    }
+    
+    getCellAt(row, col) {
+        return this.cells.find(cell => 
+            parseInt(cell.dataset.row) === row && parseInt(cell.dataset.col) === col
+        );
+    }
+    
+    canMergeSelection(selectedCells) {
+        // Check if any of the selected cells are already part of a larger merged area
+        return selectedCells.every(cell => {
+            // A cell can be merged if it's not already part of a merged area,
+            // or if all cells in the selection belong to the same merged area
+            return !this.isCellInMergedArea(cell) || this.areAllCellsInSameMergedArea(selectedCells);
+        });
+    }
+    
+    isCellInMergedArea(cell) {
+        const row = parseInt(cell.dataset.row);
+        const col = parseInt(cell.dataset.col);
+        
+        return this.mergedAreas.some(area => 
+            row >= area.startRow && row <= area.endRow &&
+            col >= area.startCol && col <= area.endCol
+        );
+    }
+    
+    areAllCellsInSameMergedArea(cells) {
+        if (cells.length === 0) return false;
+        
+        const firstCellArea = this.getMergedAreaForCell(cells[0]);
+        if (!firstCellArea) return false;
+        
+        return cells.every(cell => {
+            const cellArea = this.getMergedAreaForCell(cell);
+            return cellArea === firstCellArea;
+        });
+    }
+    
+    getMergedAreaForCell(cell) {
+        const row = parseInt(cell.dataset.row);
+        const col = parseInt(cell.dataset.col);
+        
+        return this.mergedAreas.find(area => 
+            row >= area.startRow && row <= area.endRow &&
+            col >= area.startCol && col <= area.endCol
+        );
+    }
+    
+    isValidSelection() {
+        const selection = this.getNormalizedSelection();
+        return selection.startRow !== selection.endRow || selection.startCol !== selection.endCol;
+    }
+    
+    mergeSelection() {
+        const selection = this.getNormalizedSelection();
+        const selectedCells = this.getCellsInSelection(selection);
+        
+        if (!this.canMergeSelection(selectedCells)) return;
+        
+        // Remove any existing merged areas that overlap with this selection
+        this.removeMergedAreasInSelection(selection);
+        
+        // Remove any single selections in the merged area
+        selectedCells.forEach(cell => {
+            cell.classList.remove('single-selected');
+            const cellId = cell.dataset.id;
+            this.singleSelectedCells = this.singleSelectedCells.filter(c => c.id !== cellId);
+        });
+        
+        // Add new merged area
+        const mergedArea = {
+            startRow: selection.startRow,
+            endRow: selection.endRow,
+            startCol: selection.startCol,
+            endCol: selection.endCol,
+            id: `merged-${Date.now()}`,
+            hasContent: false
+        };
+        this.mergedAreas.push(mergedArea);
+        
+        // Apply merge styling with animation
+        selectedCells.forEach((cell, index) => {
+            setTimeout(() => {
+                cell.classList.add('merging');
+                setTimeout(() => {
+                    cell.classList.remove('merging');
+                    cell.classList.add('merged');
+                }, 600);
+            }, index * 50);
+        });
+        
+        // Create merged area overlay
+        setTimeout(() => {
+            this.createMergedAreaOverlay(mergedArea);
+        }, 600);
+        
+        if (this.options.onMerge) {
+            this.options.onMerge(selection, this.mergedAreas);
+        }
     }
 }
