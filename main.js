@@ -308,11 +308,24 @@ document.addEventListener('DOMContentLoaded', function() {
         const categories = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
         const data = categories.map(() => Math.floor(Math.random() * 100) + 10);
         
-        // Randomly choose between line and column chart
-        const chartTypes = ['line', 'column'];
+        // Randomly choose between different chart types
+        const chartTypes = ['line', 'column', 'bar', 'pie'];
         const randomType = chartTypes[Math.floor(Math.random() * chartTypes.length)];
         
         console.log('Chart type:', randomType, 'Data:', data);
+        
+        // Prepare data for pie chart if needed
+        let chartData, chartCategories;
+        if (randomType === 'pie') {
+            chartData = categories.map((cat, index) => ({
+                name: cat,
+                y: data[index]
+            }));
+            chartCategories = null;
+        } else {
+            chartData = data;
+            chartCategories = categories;
+        }
         
         // Create Highcharts configuration
         const chartConfig = {
@@ -326,7 +339,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             },
             title: {
-                text: `${randomType === 'line' ? 'Line' : 'Bar'} Chart`,
+                text: `${getChartTitle(randomType)}`,
                 style: {
                     fontSize: '14px',
                     fontWeight: 'bold',
@@ -337,10 +350,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 enabled: false
             },
             legend: {
-                enabled: false
+                enabled: randomType === 'pie',
+                align: 'right',
+                verticalAlign: 'middle',
+                layout: 'vertical',
+                itemStyle: {
+                    fontSize: '10px'
+                }
             },
-            xAxis: {
-                categories: categories,
+            xAxis: randomType === 'pie' ? undefined : {
+                categories: chartCategories,
                 labels: {
                     style: {
                         fontSize: '11px'
@@ -350,7 +369,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     text: null
                 }
             },
-            yAxis: {
+            yAxis: randomType === 'pie' ? undefined : {
                 title: {
                     text: 'Value',
                     style: {
@@ -370,7 +389,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         duration: 500
                     },
                     dataLabels: {
-                        enabled: false
+                        enabled: randomType === 'pie',
+                        format: randomType === 'pie' ? '{point.name}: {point.percentage:.1f}%' : undefined,
+                        style: {
+                            fontSize: '9px'
+                        }
                     }
                 },
                 line: {
@@ -384,16 +407,38 @@ document.addEventListener('DOMContentLoaded', function() {
                     borderRadius: 3,
                     borderWidth: 0,
                     pointPadding: 0.1
+                },
+                bar: {
+                    borderRadius: 3,
+                    borderWidth: 0,
+                    pointPadding: 0.1
+                },
+                pie: {
+                    allowPointSelect: true,
+                    cursor: 'pointer',
+                    showInLegend: true,
+                    size: '80%',
+                    innerSize: '30%', // Creates a donut effect
+                    dataLabels: {
+                        enabled: true,
+                        distance: 10
+                    }
                 }
             },
             series: [{
-                name: 'Value',
-                data: data,
-                color: randomType === 'line' ? '#007bff' : '#28a745'
+                name: randomType === 'pie' ? 'Values' : 'Value',
+                data: chartData,
+                colorByPoint: randomType === 'pie',
+                colors: randomType === 'pie' ? ['#007bff', '#28a745', '#ffc107', '#dc3545', '#6f42c1', '#fd7e14'] : undefined,
+                color: randomType !== 'pie' ? getChartColor(randomType) : undefined
             }],
             tooltip: {
                 formatter: function() {
-                    return `<b>${this.x}</b><br/>${this.series.name}: ${this.y}`;
+                    if (randomType === 'pie') {
+                        return `<b>${this.point.name}</b><br/>Value: ${this.y}<br/>Percentage: ${this.percentage.toFixed(1)}%`;
+                    } else {
+                        return `<b>${this.x}</b><br/>${this.series.name}: ${this.y}`;
+                    }
                 }
             },
             responsive: {
@@ -407,17 +452,17 @@ document.addEventListener('DOMContentLoaded', function() {
                                 fontSize: '12px'
                             }
                         },
-                        xAxis: {
-                            labels: {
-                                style: {
-                                    fontSize: '10px'
-                                }
+                        legend: {
+                            itemStyle: {
+                                fontSize: '9px'
                             }
                         },
-                        yAxis: {
-                            labels: {
-                                style: {
-                                    fontSize: '10px'
+                        plotOptions: {
+                            pie: {
+                                dataLabels: {
+                                    style: {
+                                        fontSize: '8px'
+                                    }
                                 }
                             }
                         }
@@ -442,6 +487,38 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         return chartContainer;
+    }
+    
+    // Helper function to get chart title based on type
+    function getChartTitle(chartType) {
+        switch (chartType) {
+            case 'line':
+                return 'Line Chart';
+            case 'column':
+                return 'Column Chart';
+            case 'bar':
+                return 'Bar Chart';
+            case 'pie':
+                return 'Pie Chart';
+            default:
+                return 'Chart';
+        }
+    }
+    
+    // Helper function to get chart color based on type
+    function getChartColor(chartType) {
+        switch (chartType) {
+            case 'line':
+                return '#007bff';
+            case 'column':
+                return '#28a745';
+            case 'bar':
+                return '#fd7e14';
+            case 'pie':
+                return '#6f42c1';
+            default:
+                return '#007bff';
+        }
     }
     
     // Add some helpful keyboard shortcuts
