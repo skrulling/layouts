@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Layout Library POC</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Layout Library POC</h1>
+        <div class="controls">
+            <button id="editModeBtn" class="active">Edit Mode: ON</button>
+            <button id="exportBtn">Export Layout</button>
+            <button id="resetBtn">Reset Grid</button>
+        </div>
+        <div id="layoutGrid" class="layout-grid"></div>
+        <div class="info">
+            <h3>Instructions:</h3>
+            <p><strong>Edit Mode ON:</strong> Click individual cells to select them, or click and drag to merge rectangular areas.</p>
+            <p><strong>Edit Mode OFF:</strong> View your layout with only the selected areas visible (no grid background).</p>
+            <p><strong>Keyboard:</strong> Space to toggle mode, Escape to clear selection, Ctrl+E to export, Ctrl+R to reset.</p>
+        </div>
+    </div>
+    
+    <script src="layoutLib.js"></script>
+    <script src="main.js"></script>
+</body>
+</html> 

@@ -1,0 +1,239 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f5f5f5;
+    color: #333;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 30px;
+    color: #2c3e50;
+}
+
+.controls {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 30px;
+}
+
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    background-color: #3498db;
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s ease;
+}
+
+button:hover {
+    background-color: #2980b9;
+}
+
+button:active {
+    transform: translateY(1px);
+}
+
+button.active {
+    background-color: #27ae60;
+}
+
+button.active:hover {
+    background-color: #219a52;
+}
+
+.layout-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(6, 1fr);
+    gap: 8px;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: white;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    user-select: none;
+    position: relative;
+}
+
+.grid-cell {
+    aspect-ratio: 1;
+    border: 2px solid #bdc3c7;
+    border-radius: 8px;
+    background-color: #ecf0f1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: bold;
+    color: #7f8c8d;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.grid-cell:hover {
+    background-color: #d5dbdb;
+    border-color: #95a5a6;
+}
+
+.grid-cell.merged {
+    background-color: #e8f5e8;
+    border-color: #27ae60;
+    color: #27ae60;
+}
+
+.grid-cell.selecting {
+    background-color: #fff3cd;
+    border-color: #ffc107;
+    color: #856404;
+}
+
+.grid-cell.preview {
+    background-color: #d4edda;
+    border-color: #28a745;
+    color: #155724;
+}
+
+.grid-cell.single-selected {
+    background-color: #e8f5e8;
+    border-color: #27ae60;
+    color: #27ae60;
+}
+
+/* Selection outline for drag preview */
+.selection-outline {
+    position: fixed;
+    border: 3px solid #007bff;
+    background-color: rgba(0, 123, 255, 0.1);
+    pointer-events: none;
+    border-radius: 8px;
+    z-index: 1000;
+    opacity: 0;
+    transition: all 0.2s ease;
+}
+
+.selection-outline.active {
+    opacity: 1;
+}
+
+/* Merged area overlay */
+.merged-area-overlay {
+    position: absolute;
+    background-color: #e8f5e8;
+    border: 2px solid #27ae60;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: bold;
+    color: #27ae60;
+    z-index: 5;
+    pointer-events: none;
+    transition: all 0.3s ease;
+}
+
+.merged-area-overlay:hover {
+    background-color: #d5e8d5;
+    border-color: #1e7e34;
+}
+
+/* Merge animation */
+@keyframes mergeAnimation {
+    0% {
+        transform: scale(1);
+        background-color: #fff3cd;
+    }
+    50% {
+        transform: scale(1.05);
+        background-color: #d4edda;
+    }
+    100% {
+        transform: scale(1);
+        background-color: #e8f5e8;
+    }
+}
+
+.grid-cell.merging {
+    animation: mergeAnimation 0.6s ease-in-out;
+}
+
+/* Info section */
+.info {
+    margin-top: 30px;
+    text-align: center;
+    padding: 20px;
+    background-color: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.info h3 {
+    color: #2c3e50;
+    margin-bottom: 10px;
+}
+
+.info p {
+    color: #7f8c8d;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .layout-grid {
+        max-width: 600px;
+        gap: 6px;
+        padding: 15px;
+    }
+    
+    .grid-cell {
+        font-size: 18px;
+    }
+    
+    .controls {
+        flex-direction: column;
+        align-items: center;
+    }
+}
+
+/* View mode styles */
+.layout-grid.view-mode {
+    background-color: #f8f9fa;
+}
+
+.layout-grid.view-mode .grid-cell {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.layout-grid.view-mode .grid-cell.single-selected {
+    opacity: 1;
+    background-color: #e8f5e8;
+    border-color: #27ae60;
+    color: #27ae60;
+}
+
+.merged-area-overlay.view-mode {
+    background-color: #e8f5e8;
+    border-color: #27ae60;
+}
+
+.merged-area-overlay.view-mode::after {
+    content: '';
+} 
