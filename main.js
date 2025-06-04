@@ -572,9 +572,6 @@ document.addEventListener('DOMContentLoaded', function() {
         touchStartCell = null;
     });
     
-    console.log('Layout Library POC initialized successfully!');
-    showNotification('Layout Library loaded! Create boxes by dragging, then click their centers for Highcharts!', 5000);
-    
     // Debug function to check overlays
     window.debugOverlays = function() {
         const overlays = document.querySelectorAll('.merged-area-overlay');
@@ -590,5 +587,73 @@ document.addEventListener('DOMContentLoaded', function() {
         return overlays;
     };
     
-    console.log('Debug function available: window.debugOverlays()');
+    // Debug function to check view mode state
+    window.debugViewMode = function() {
+        const container = document.getElementById('layoutGrid');
+        const isViewMode = container.classList.contains('view-mode');
+        const singleSelected = document.querySelectorAll('.grid-cell.single-selected');
+        const merged = document.querySelectorAll('.grid-cell.merged');
+        const allCells = document.querySelectorAll('.grid-cell');
+        
+        console.log('View Mode Debug:', {
+            isViewMode: isViewMode,
+            editMode: layoutLib.editMode,
+            singleSelectedCells: singleSelected.length,
+            mergedCells: merged.length,
+            totalCells: allCells.length,
+            mergedAreas: layoutLib.mergedAreas.length,
+            singleSelectedArray: layoutLib.singleSelectedCells.length
+        });
+        
+        console.log('Single selected cells:', Array.from(singleSelected).map(cell => ({
+            id: cell.dataset.id,
+            row: cell.dataset.row,
+            col: cell.dataset.col,
+            classes: cell.className,
+            opacity: cell.style.opacity
+        })));
+        
+        console.log('Merged areas:', layoutLib.mergedAreas);
+        
+        // Check for problematic cells
+        const problematicCells = Array.from(allCells).filter(cell => {
+            const hasClasses = cell.classList.contains('single-selected') || 
+                              cell.classList.contains('selecting') || 
+                              cell.classList.contains('preview');
+            const isVisible = cell.style.opacity !== '0';
+            return hasClasses && isVisible && isViewMode;
+        });
+        
+        if (problematicCells.length > 0) {
+            console.warn('Found problematic cells that should not be visible in view mode:', 
+                problematicCells.map(cell => ({
+                    id: cell.dataset.id,
+                    classes: cell.className,
+                    opacity: cell.style.opacity
+                }))
+            );
+        }
+        
+        return {
+            isViewMode,
+            singleSelected: Array.from(singleSelected),
+            merged: Array.from(merged),
+            problematicCells
+        };
+    };
+    
+    // Add a function to manually trigger cleanup
+    window.forceCleanup = function() {
+        console.log('Forcing comprehensive cleanup...');
+        layoutLib.cleanupAllCellStates();
+        if (!layoutLib.editMode) {
+            layoutLib.updateViewMode();
+        }
+        console.log('Cleanup complete');
+    };
+    
+    console.log('Debug functions available: window.debugOverlays(), window.debugViewMode()');
+    
+    console.log('Layout Library POC initialized successfully!');
+    showNotification('Layout Library loaded! Create boxes by dragging, then click their centers for Highcharts!', 5000);
 });

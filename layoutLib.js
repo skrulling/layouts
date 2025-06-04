@@ -22,6 +22,7 @@ class LayoutLib {
         this.isDragging = false;
         this.isDraggingRectangle = false;
         this.draggedRectangle = null;
+        this.potentialDragOverlay = null;
         this.isResizing = false;
         this.resizeData = null;
         this.startCell = null;
@@ -29,6 +30,11 @@ class LayoutLib {
         this.selectionOutline = null;
         this.rectangleDragPreview = null;
         this.editMode = true; // Edit mode is on by default
+        
+        // Drag threshold to distinguish clicks from drags
+        this.dragThreshold = 5; // pixels
+        this.dragStartPos = null;
+        this.hasMoved = false;
         
         this.init();
     }
@@ -99,10 +105,24 @@ class LayoutLib {
         
         // Prevent context menu on right click
         this.container.addEventListener('contextmenu', (e) => e.preventDefault());
+        
+        // Prevent default drag behaviors
+        this.container.addEventListener('dragstart', (e) => e.preventDefault());
+        this.container.addEventListener('selectstart', (e) => e.preventDefault());
     }
     
     handleClick(e) {
         console.log('Click event triggered:', e.target.className, 'Edit mode:', this.editMode);
+        
+        // Skip all click handling if we just finished dragging
+        if (this.hasMoved) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        
+        // Skip content click handling here since we handle it in handleMouseUp now
+        // This prevents duplicate content click events
         
         // Handle content clicking on merged area overlays or their children
         let targetOverlay = null;
@@ -117,23 +137,16 @@ class LayoutLib {
         if (targetOverlay) {
             console.log('Clicked on merged area overlay or child!', targetOverlay);
             
-            if (this.editMode && this.options.onContentClick) {
-                // Only trigger content click if not dragging/resizing
-                if (!this.isDragging && !this.isDraggingRectangle && !this.isResizing) {
-                    const mergedId = targetOverlay.dataset.mergedId;
-                    const mergedArea = this.mergedAreas.find(area => area.id === mergedId);
-                    if (mergedArea) {
-                        console.log('Triggering content click for area:', mergedId);
-                        e.stopPropagation();
-                        this.options.onContentClick(mergedArea, targetOverlay);
-                        return;
-                    }
-                }
+            // Content clicks are now handled in handleMouseUp to avoid conflicts with dragging
+            // Just prevent further event propagation here
+            if (this.editMode) {
+                e.stopPropagation();
+                return;
             }
         }
         
-        // Original cell clicking logic
-        if (!this.editMode || this.isDragging || this.isDraggingRectangle) return;
+        // Original cell clicking logic - but only if we're not in any drag state
+        if (!this.editMode || this.isDragging || this.isDraggingRectangle || this.isResizing) return;
         
         if (e.target.classList.contains('grid-cell')) {
             e.stopPropagation();
@@ -171,20 +184,36 @@ class LayoutLib {
     handleMouseDown(e) {
         console.log('Mouse down event:', e.target.className, 'Edit mode:', this.editMode);
         
-        // Check if clicking on a merged area overlay
+        // Prevent default browser behaviors like text selection
+        e.preventDefault();
+        
+        // Store initial mouse position for drag threshold detection
+        this.dragStartPos = { x: e.clientX, y: e.clientY };
+        this.hasMoved = false;
+        
+        // Check if clicking on a merged area overlay or its content
+        let targetOverlay = null;
+        
         if (e.target.classList.contains('merged-area-overlay')) {
-            const rect = e.target.getBoundingClientRect();
+            targetOverlay = e.target;
+        } else {
+            // Check if clicked element is inside an overlay
+            targetOverlay = e.target.closest('.merged-area-overlay');
+        }
+        
+        if (targetOverlay) {
+            const rect = targetOverlay.getBoundingClientRect();
             const resizeHandle = this.getResizeHandle(e, rect);
             
-            console.log('Clicked on overlay, resize handle:', resizeHandle);
+            console.log('Clicked on overlay or its content, resize handle:', resizeHandle);
             
             if (this.editMode) {
                 if (resizeHandle) {
-                    // Near edges: start resize
-                    this.startResize(e, e.target, resizeHandle);
+                    // Near edges: start resize immediately
+                    this.startResize(e, targetOverlay, resizeHandle);
                 } else {
-                    // Center area: start rectangle drag
-                    this.startRectangleDrag(e);
+                    // Store the overlay for potential drag operation
+                    this.potentialDragOverlay = targetOverlay;
                 }
             }
             return;
@@ -203,12 +232,10 @@ class LayoutLib {
             };
             
             this.updateSelection();
-            e.preventDefault();
         }
     }
     
-    startRectangleDrag(e) {
-        const overlayElement = e.target;
+    startRectangleDrag(e, overlayElement) {
         const mergedId = overlayElement.dataset.mergedId;
         const mergedArea = this.mergedAreas.find(area => area.id === mergedId);
         
@@ -242,32 +269,51 @@ class LayoutLib {
     }
     
     handleMouseMove(e) {
+        // Prevent default behaviors during any drag operation
+        if (this.isDragging || this.isDraggingRectangle || this.isResizing || this.potentialDragOverlay) {
+            e.preventDefault();
+        }
+        
+        // Check for drag threshold if we have a potential drag overlay
+        if (this.potentialDragOverlay && !this.isDraggingRectangle && this.dragStartPos) {
+            const deltaX = Math.abs(e.clientX - this.dragStartPos.x);
+            const deltaY = Math.abs(e.clientY - this.dragStartPos.y);
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            
+            if (distance > this.dragThreshold) {
+                this.hasMoved = true;
+                // Start rectangle drag
+                this.startRectangleDrag(e, this.potentialDragOverlay);
+                this.potentialDragOverlay = null;
+            }
+        }
+        
         if (this.isResizing) {
             this.updateResize(e);
             return;
         }
-        
+
         if (this.isDraggingRectangle) {
             this.updateRectangleDragPreview(e);
             this.updateRectanglePlacementPreview(e);
             return;
         }
-        
+
         // Check for resize cursor when not dragging
         if (!this.isDragging && !this.isDraggingRectangle && this.editMode) {
             this.updateResizeCursor(e);
         }
-        
+
         if (!this.isDragging || !this.editMode) return;
-        
+
         const elementUnderMouse = document.elementFromPoint(e.clientX, e.clientY);
         if (elementUnderMouse && elementUnderMouse.classList.contains('grid-cell')) {
             const endRow = parseInt(elementUnderMouse.dataset.row);
             const endCol = parseInt(elementUnderMouse.dataset.col);
-            
+
             this.currentSelection.endRow = endRow;
             this.currentSelection.endCol = endCol;
-            
+
             this.updateSelection();
         }
     }
@@ -367,29 +413,77 @@ class LayoutLib {
     }
     
     handleMouseUp(e) {
+        // Handle potential drag overlay that was never dragged (i.e., a click)
+        if (this.potentialDragOverlay && !this.hasMoved && this.editMode && this.options.onContentClick) {
+            const mergedId = this.potentialDragOverlay.dataset.mergedId;
+            const mergedArea = this.mergedAreas.find(area => area.id === mergedId);
+            if (mergedArea) {
+                console.log('Triggering content click for area (mouse up):', mergedId);
+                this.options.onContentClick(mergedArea, this.potentialDragOverlay);
+            }
+        }
+        
+        // Clean up potential drag state
+        this.potentialDragOverlay = null;
+        this.dragStartPos = null;
+        
+        // Reset hasMoved flag after a short delay to prevent immediate clicks
+        if (this.hasMoved) {
+            setTimeout(() => {
+                this.hasMoved = false;
+            }, 50);
+        } else {
+            this.hasMoved = false;
+        }
+        
         if (this.isResizing) {
             this.finishResize();
             return;
         }
-        
+
         if (this.isDraggingRectangle) {
             this.finishRectangleDrag(e);
             return;
         }
-        
+
         if (!this.isDragging) return;
-        
+
         this.isDragging = false;
-        
+
         if (this.currentSelection && this.isValidSelection()) {
             this.mergeSelection();
         }
-        
+
         this.clearSelection();
     }
     
     finishRectangleDrag(e) {
         const targetCell = document.elementFromPoint(e.clientX, e.clientY);
+        
+        // Clean up the original position first - this is crucial
+        const originalArea = {
+            startRow: this.draggedRectangle.originalStartRow,
+            startCol: this.draggedRectangle.originalStartCol,
+            endRow: this.draggedRectangle.originalEndRow,
+            endCol: this.draggedRectangle.originalEndCol
+        };
+        
+        // Thoroughly clean the original position
+        for (let row = originalArea.startRow; row <= originalArea.endRow; row++) {
+            for (let col = originalArea.startCol; col <= originalArea.endCol; col++) {
+                const cell = this.getCellAt(row, col);
+                if (cell) {
+                    // Remove ALL possible classes that could make a cell visible
+                    cell.classList.remove('single-selected', 'merged', 'selecting', 'preview', 'rectangle-drop-preview', 'rectangle-drop-invalid');
+                    // Reset opacity to let CSS handle it
+                    cell.style.opacity = '';
+                    
+                    // Remove from singleSelectedCells array if present
+                    const cellId = cell.dataset.id;
+                    this.singleSelectedCells = this.singleSelectedCells.filter(c => c.id !== cellId);
+                }
+            }
+        }
         
         if (targetCell && targetCell.classList.contains('grid-cell')) {
             const targetRow = parseInt(targetCell.dataset.row);
@@ -453,10 +547,16 @@ class LayoutLib {
         this.draggedRectangle = null;
         this.rectangleDragPreview.style.opacity = '0';
         
-        // Clear preview classes
+        // Clear preview classes and any other drag-related classes
         this.cells.forEach(cell => {
-            cell.classList.remove('rectangle-drop-preview', 'rectangle-drop-invalid');
+            cell.classList.remove('rectangle-drop-preview', 'rectangle-drop-invalid', 'selecting', 'preview');
         });
+        
+        // Reset cursor
+        document.body.style.cursor = '';
+        
+        // Run comprehensive cleanup to ensure no stray states remain
+        this.cleanupAllCellStates();
     }
     
     clearRectangleCells(mergedArea) {
@@ -681,6 +781,9 @@ class LayoutLib {
             this.container.classList.remove('view-mode');
         } else {
             this.container.classList.add('view-mode');
+            
+            // Run comprehensive cleanup when switching to view mode
+            this.cleanupAllCellStates();
         }
         
         // Update merged area overlays
@@ -710,6 +813,38 @@ class LayoutLib {
         if (!this.editMode) {
             this.clearSelection();
         }
+    }
+    
+    // Comprehensive cleanup method to ensure state consistency
+    cleanupAllCellStates() {
+        console.log('Running comprehensive cell state cleanup...');
+        
+        // First, remove ALL classes from ALL cells and reset opacity to let CSS handle it
+        this.cells.forEach(cell => {
+            cell.classList.remove('single-selected', 'selecting', 'preview', 'rectangle-drop-preview', 'rectangle-drop-invalid', 'resize-preview', 'resize-invalid');
+            // Don't set opacity inline - let CSS handle it based on view mode and classes
+            cell.style.opacity = '';
+        });
+        
+        // Clear the single selected cells array completely
+        this.singleSelectedCells = [];
+        
+        // Now, only apply the correct classes based on merged areas
+        this.mergedAreas.forEach(mergedArea => {
+            for (let row = mergedArea.startRow; row <= mergedArea.endRow; row++) {
+                for (let col = mergedArea.startCol; col <= mergedArea.endCol; col++) {
+                    const cell = this.getCellAt(row, col);
+                    if (cell) {
+                        cell.classList.add('merged');
+                        // In view mode, merged cells should be hidden (overlay shows instead)
+                        // In edit mode, merged cells are also hidden (overlay shows instead)
+                        cell.style.opacity = '0';
+                    }
+                }
+            }
+        });
+        
+        console.log('Cell state cleanup complete. Merged areas:', this.mergedAreas.length, 'Single selected:', this.singleSelectedCells.length);
     }
     
     // Public API methods
@@ -764,8 +899,19 @@ class LayoutLib {
         const overlays = this.container.querySelectorAll('.merged-area-overlay');
         overlays.forEach(overlay => overlay.remove());
         
-        // Reset cursor
+        // Reset cursor and clean up any drag states
         document.body.style.cursor = '';
+        this.isDragging = false;
+        this.isDraggingRectangle = false;
+        this.isResizing = false;
+        this.draggedRectangle = null;
+        this.potentialDragOverlay = null;
+        this.resizeData = null;
+        this.dragStartPos = null;
+        this.hasMoved = false;
+        
+        // Clear any active selections
+        this.clearSelection();
     }
     
     destroy() {
@@ -1002,10 +1148,13 @@ class LayoutLib {
         this.resizeData = null;
         document.body.style.cursor = '';
         
-        // Clear preview classes
+        // Clear preview classes and any other temporary classes
         this.cells.forEach(cell => {
-            cell.classList.remove('resize-preview', 'resize-invalid');
+            cell.classList.remove('resize-preview', 'resize-invalid', 'selecting', 'preview');
         });
+        
+        // Run comprehensive cleanup to ensure no stray states remain
+        this.cleanupAllCellStates();
     }
     
     // Public API methods for content management

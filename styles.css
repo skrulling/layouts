@@ -62,14 +62,17 @@ button.active:hover {
     grid-template-columns: repeat(8, 1fr);
     grid-template-rows: repeat(6, 1fr);
     gap: 8px;
-    max-width: 800px;
-    margin: 0 auto;
     padding: 20px;
-    background-color: white;
+    background-color: #f8f9fa;
     border-radius: 10px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    user-select: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin: 20px auto;
+    max-width: 800px;
     position: relative;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
 }
 
 .grid-cell {
@@ -229,9 +232,16 @@ button.active:hover {
     color: #27ae60;
 }
 
-.merged-area-overlay.view-mode {
+.layout-grid.view-mode .merged-area-overlay {
     background-color: #e8f5e8;
-    border-color: #27ae60;
+    border: none !important;
+}
+
+.layout-grid.view-mode .merged-area-overlay:hover {
+    background-color: #e8f5e8;
+    border: none !important;
+    transform: none;
+    box-shadow: none;
 }
 
 .merged-area-overlay.view-mode::after {
