@@ -67,7 +67,7 @@ class LayoutLib {
     createCell(row, col) {
         const cell = document.createElement('div');
         cell.className = 'grid-cell';
-        cell.textContent = '+';
+        cell.textContent = '';
         cell.dataset.row = row;
         cell.dataset.col = col;
         cell.dataset.id = `${row}-${col}`;
